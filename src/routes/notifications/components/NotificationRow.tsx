@@ -1,0 +1,73 @@
+import { Bell, Check } from 'lucide-react';
+import { memo } from 'react';
+
+import { Avatar } from '@/components/ui/Avatar';
+import { Card } from '@/components/ui/Card';
+import { IconButton } from '@/components/ui/IconButton';
+import { describeNotification, type Notification } from '@/features/notifications/types';
+import { cn } from '@/lib/cn';
+import { relativeTime } from '@/lib/relative-time';
+import { displayName, initialsOf } from '@/lib/user-display';
+
+interface NotificationRowProps {
+  notification: Notification;
+  isPending: boolean;
+  onMarkRead: (notificationId: string) => void;
+}
+
+/** One row. An absent actor (system-raised) renders with a neutral bell. */
+export const NotificationRow = memo(function NotificationRow({
+  notification,
+  isPending,
+  onMarkRead,
+}: NotificationRowProps) {
+  const { actor } = notification;
+  const message = describeNotification(notification);
+  const name = actor !== null && actor !== undefined ? displayName(actor) : null;
+
+  return (
+    <Card
+      elevation={notification.read ? 'flat' : 'floating'}
+      as="article"
+      className={cn(
+        'gap-md p-md flex items-center',
+        !notification.read && 'bg-surface-container-lowest',
+      )}
+    >
+      {actor !== null && actor !== undefined ? (
+        <Avatar initials={initialsOf(actor)} name={displayName(actor)} imageUrl={actor.avatarUrl} />
+      ) : (
+        <span
+          aria-hidden
+          className="bg-surface-container-low text-primary flex size-10 shrink-0 items-center justify-center rounded-full"
+        >
+          <Bell className="size-5" />
+        </span>
+      )}
+
+      <div className="min-w-0 flex-1">
+        <p className="font-body-sm text-body-sm text-on-surface">
+          {name !== null && <span className="font-heading text-on-surface">{name} </span>}
+          <span className={name !== null ? undefined : 'first-letter:uppercase'}>{message}</span>
+        </p>
+        <p className="font-small text-small text-on-surface-variant">
+          {relativeTime(notification.createdAt)}
+        </p>
+      </div>
+
+      {!notification.read ? (
+        <div className="gap-sm flex shrink-0 items-center">
+          <span aria-hidden className="bg-primary-container size-2 rounded-full" />
+          <IconButton
+            label="Mark as read"
+            icon={<Check className="size-4" />}
+            disabled={isPending}
+            onClick={() => {
+              onMarkRead(notification.id);
+            }}
+          />
+        </div>
+      ) : null}
+    </Card>
+  );
+});

@@ -1,0 +1,166 @@
+/**
+ * The bridge, and nothing but the bridge.
+ *
+ * `ipcRenderer` itself is never exposed — only named functions, each bound to
+ * one allowlisted channel (OWASP A01). The renderer cannot reach a channel that
+ * has no function here, and cannot invent one.
+ *
+ * Note what the bridge cannot do: there is no function that returns an access
+ * or refresh token, because the renderer is never given one.
+ *
+ * This file stays deliberately thin: it forwards, it does not decide. Request
+ * validation happens in the main process, response validation in the renderer.
+ */
+import { contextBridge, ipcRenderer } from 'electron';
+
+import { IPC_CHANNELS } from './ipc/channels';
+
+import type {
+  AcknowledgedResponse,
+  AppInfoResponse,
+  AvatarCommitRequest,
+  AvatarPickResponse,
+  ClearReactionRequest,
+  CommentPage,
+  CommentResponse,
+  CreateCommentRequest,
+  CreatePostRequest,
+  CreatePostResponse,
+  DeleteCommentRequest,
+  DeletedResponse,
+  ExportPostsRequest,
+  ExportPostsResponse,
+  FeedRequest,
+  FeedResponse,
+  ForgotPasswordRequest,
+  FriendUserRequest,
+  FriendshipIdRequest,
+  FriendshipPage,
+  FriendshipResponse,
+  IpcResult,
+  ListCommentsRequest,
+  ListNotificationsRequest,
+  LoginRequest,
+  NotificationIdRequest,
+  NotificationPage,
+  NotificationResponse,
+  PageRequest,
+  PostIdRequest,
+  PostResponse,
+  ProfileResponse,
+  PublicUserRequest,
+  ReactionSummary,
+  ReactionTargetRequest,
+  RegisterRequest,
+  RegisterResponse,
+  RepostRequest,
+  ResetPasswordRequest,
+  SessionResponse,
+  SetReactionRequest,
+  ShareLinkResponse,
+  UnreadCount,
+  UpdatePostRequest,
+  UpdateProfileRequest,
+  UserPostsRequest,
+  UserPostsResponse,
+  VerifyOtpRequest,
+  WindowState,
+  YelloBridge,
+} from '../shared/ipc-types';
+
+const BRIDGE_KEY = 'yello';
+
+function invoke<TResponse>(channel: string, payload?: unknown): Promise<IpcResult<TResponse>> {
+  return ipcRenderer.invoke(channel, payload) as Promise<IpcResult<TResponse>>;
+}
+
+const bridge: YelloBridge = {
+  auth: {
+    login: (request: LoginRequest) => invoke<SessionResponse>(IPC_CHANNELS.AUTH_LOGIN, request),
+    register: (request: RegisterRequest) =>
+      invoke<RegisterResponse>(IPC_CHANNELS.AUTH_REGISTER, request),
+    verifyOtp: (request: VerifyOtpRequest) =>
+      invoke<SessionResponse>(IPC_CHANNELS.AUTH_VERIFY_OTP, request),
+    logout: () => invoke<SessionResponse>(IPC_CHANNELS.AUTH_LOGOUT),
+    currentSession: () => invoke<SessionResponse>(IPC_CHANNELS.AUTH_CURRENT_SESSION),
+    forgotPassword: (request: ForgotPasswordRequest) =>
+      invoke<AcknowledgedResponse>(IPC_CHANNELS.AUTH_FORGOT_PASSWORD, request),
+    resetPassword: (request: ResetPasswordRequest) =>
+      invoke<AcknowledgedResponse>(IPC_CHANNELS.AUTH_RESET_PASSWORD, request),
+  },
+  feed: {
+    list: (request: FeedRequest) => invoke<FeedResponse>(IPC_CHANNELS.FEED_LIST, request),
+    createPost: (request: CreatePostRequest) =>
+      invoke<CreatePostResponse>(IPC_CHANNELS.FEED_CREATE_POST, request),
+  },
+  posts: {
+    get: (request: PostIdRequest) => invoke<PostResponse>(IPC_CHANNELS.POSTS_GET, request),
+    update: (request: UpdatePostRequest) =>
+      invoke<PostResponse>(IPC_CHANNELS.POSTS_UPDATE, request),
+    remove: (request: PostIdRequest) => invoke<DeletedResponse>(IPC_CHANNELS.POSTS_DELETE, request),
+    repost: (request: RepostRequest) => invoke<PostResponse>(IPC_CHANNELS.POSTS_REPOST, request),
+    shareLink: (request: PostIdRequest) =>
+      invoke<ShareLinkResponse>(IPC_CHANNELS.POSTS_SHARE_LINK, request),
+  },
+  comments: {
+    create: (request: CreateCommentRequest) =>
+      invoke<CommentResponse>(IPC_CHANNELS.COMMENTS_CREATE, request),
+    list: (request: ListCommentsRequest) =>
+      invoke<CommentPage>(IPC_CHANNELS.COMMENTS_LIST, request),
+    remove: (request: DeleteCommentRequest) =>
+      invoke<DeletedResponse>(IPC_CHANNELS.COMMENTS_DELETE, request),
+  },
+  reactions: {
+    set: (request: SetReactionRequest) =>
+      invoke<ReactionSummary>(IPC_CHANNELS.REACTIONS_SET, request),
+    clear: (request: ClearReactionRequest) =>
+      invoke<ReactionSummary>(IPC_CHANNELS.REACTIONS_CLEAR, request),
+    summary: (request: ReactionTargetRequest) =>
+      invoke<ReactionSummary>(IPC_CHANNELS.REACTIONS_SUMMARY, request),
+  },
+  friends: {
+    list: (request: PageRequest) => invoke<FriendshipPage>(IPC_CHANNELS.FRIENDS_LIST, request),
+    pendingRequests: (request: PageRequest) =>
+      invoke<FriendshipPage>(IPC_CHANNELS.FRIENDS_PENDING_REQUESTS, request),
+    sendRequest: (request: FriendUserRequest) =>
+      invoke<FriendshipResponse>(IPC_CHANNELS.FRIENDS_SEND_REQUEST, request),
+    accept: (request: FriendshipIdRequest) =>
+      invoke<FriendshipResponse>(IPC_CHANNELS.FRIENDS_ACCEPT, request),
+    decline: (request: FriendshipIdRequest) =>
+      invoke<FriendshipResponse>(IPC_CHANNELS.FRIENDS_DECLINE, request),
+    remove: (request: FriendUserRequest) =>
+      invoke<DeletedResponse>(IPC_CHANNELS.FRIENDS_REMOVE, request),
+  },
+  notifications: {
+    list: (request: ListNotificationsRequest) =>
+      invoke<NotificationPage>(IPC_CHANNELS.NOTIFICATIONS_LIST, request),
+    unreadCount: () => invoke<UnreadCount>(IPC_CHANNELS.NOTIFICATIONS_UNREAD_COUNT),
+    markRead: (request: NotificationIdRequest) =>
+      invoke<NotificationResponse>(IPC_CHANNELS.NOTIFICATIONS_MARK_READ, request),
+    markAllRead: () => invoke<UnreadCount>(IPC_CHANNELS.NOTIFICATIONS_MARK_ALL_READ),
+  },
+  profile: {
+    update: (request: UpdateProfileRequest) =>
+      invoke<ProfileResponse>(IPC_CHANNELS.PROFILE_UPDATE, request),
+    pickAvatar: () => invoke<AvatarPickResponse>(IPC_CHANNELS.PROFILE_PICK_AVATAR),
+    commitAvatar: (request: AvatarCommitRequest) =>
+      invoke<ProfileResponse>(IPC_CHANNELS.PROFILE_COMMIT_AVATAR, request),
+    listPosts: (request: UserPostsRequest) =>
+      invoke<UserPostsResponse>(IPC_CHANNELS.PROFILE_LIST_POSTS, request),
+    getUser: (request: PublicUserRequest) =>
+      invoke<ProfileResponse>(IPC_CHANNELS.PROFILE_GET_USER, request),
+  },
+  files: {
+    exportPosts: (request: ExportPostsRequest) =>
+      invoke<ExportPostsResponse>(IPC_CHANNELS.FS_EXPORT_POSTS, request),
+    readAppInfo: () => invoke<AppInfoResponse>(IPC_CHANNELS.FS_READ_APP_INFO),
+  },
+  window: {
+    minimize: () => invoke<WindowState>(IPC_CHANNELS.WINDOW_MINIMIZE),
+    toggleMaximize: () => invoke<WindowState>(IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE),
+    close: () => invoke<WindowState>(IPC_CHANNELS.WINDOW_CLOSE),
+    getState: () => invoke<WindowState>(IPC_CHANNELS.WINDOW_GET_STATE),
+  },
+};
+
+contextBridge.exposeInMainWorld(BRIDGE_KEY, bridge);

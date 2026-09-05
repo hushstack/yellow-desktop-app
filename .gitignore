@@ -1,0 +1,14 @@
+node_modules/
+dist/
+dist-electron/
+release/
+*.log
+.DS_Store
+.eslintcache
+
+# Secret-bearing env files are never committed. `.env.development` and
+# `.env.production` are committed on purpose: they hold only non-secret,
+# build-time VITE_* values that are inlined into the renderer bundle anyway.
+.env
+.env.local
+.env.*.local

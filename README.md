@@ -11,7 +11,17 @@ The interface is built from the design system attached to Stitch project
 `5967079738026567667` ("Luminous Minimalist"), and the tokens in
 `src/styles/globals.css` are that system's values verbatim.
 
-## Running it
+## Installing it
+
+Every tagged release carries installers for all three platforms — Linux
+(`.AppImage`, `.deb`), macOS (`.dmg`, `.zip`; Apple Silicon and Intel) and
+Windows (`.exe`) — on the
+[releases page](https://github.com/hushstack/yellow-desktop-app/releases).
+
+They are unsigned, so macOS Gatekeeper and Windows SmartScreen will both warn on
+first launch until signing certificates are added to the release workflow.
+
+## Running it from source
 
 ```sh
 npm install

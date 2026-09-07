@@ -1,0 +1,108 @@
+# Builds installers for every platform on a version tag and attaches them to
+# that tag's GitHub Release.
+#
+# Why a matrix rather than one job: electron-builder can only produce macOS
+# artifacts on macOS, and Windows installers are only reliable on Windows. Each
+# runner therefore builds its own platform and uploads into the same release.
+#
+# The release is created as a draft (see `publish` in electron-builder.yml) and
+# only published once all three jobs have finished, so nobody can download a
+# release that is still missing two platforms' installers.
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# The default token needs write access to create the release and upload assets.
+permissions:
+  contents: write
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One platform failing should not deny the others their artifacts; the
+      # release stays a draft either way, so a partial upload is recoverable.
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            # AppImage and deb, per electron-builder.yml.
+            args: --linux
+          - os: macos-latest
+            platform: macos
+            # The runner is arm64; x64 is cross-built so Intel Macs are covered.
+            args: --mac --arm64 --x64
+          - os: windows-latest
+            platform: windows
+            args: --win
+
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Build renderer and main
+        run: npm run build
+
+      - name: Build installers and upload to the release
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          # electron-builder's GitHub publisher reads this.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # There are no signing certificates in this repository. Without this,
+          # electron-builder searches the keychain, finds nothing, and fails the
+          # macOS build instead of producing an unsigned one. Add certificates
+          # and drop this line when the app is ready to be notarised — until
+          # then macOS will warn on first launch.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+  publish:
+    name: Publish the release
+    needs: build
+    runs-on: ubuntu-latest
+    # Runs even if a platform failed, so the artifacts that did build are
+    # reachable; the report below says which ones are missing.
+    if: always()
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+
+      - name: List what was uploaded
+        run: gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish the draft
+        if: needs.build.result == 'success'
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false --latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Leave the release drafted when a platform failed
+        if: needs.build.result != 'success'
+        run: |
+          echo "::warning::At least one platform did not build. The release is"
+          echo "::warning::left as a draft so it cannot be downloaded half-built."
+          exit 1

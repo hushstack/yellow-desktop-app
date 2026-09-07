@@ -38,12 +38,26 @@ linux:
     - deb
   category: Network
   icon: build/icons/icon.png
+  # Ties a running window to the .desktop entry, so the launcher shows the app
+  # under its own name and icon rather than as a generic Electron window.
+  syncDesktopName: true
 
 nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
 
-# Update artifacts are signature-checked by electron-updater before they are applied
-# (OWASP A08). Fill in a publish provider before enabling releases.
-publish: null
+# Update artifacts are signature-checked by electron-updater before they are
+# applied (OWASP A08). GitHub Releases is the feed: electron-updater reads the
+# same release the CI matrix uploads to, so the app updates from exactly the
+# artifacts that were built for a tag.
+#
+# `releaseType: draft` is deliberate. Three OS jobs upload to one release, and a
+# release published on the first upload would be public while still missing two
+# platforms' installers. The workflow flips it to published once every job has
+# finished — see .github/workflows/release.yml.
+publish:
+  provider: github
+  owner: hushstack
+  repo: yellow-desktop-app
+  releaseType: draft

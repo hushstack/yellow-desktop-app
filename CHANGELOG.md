@@ -6,8 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-07
+
+The first tagged release, so this section covers the whole client rather than
+only what changed since 0.1.0 — that version was never published.
+
+Installers are attached to the release: `.AppImage` and `.deb` for Linux, `.dmg`
+and `.zip` for macOS (Apple Silicon and Intel), and an `.exe` installer for
+Windows. macOS and Windows builds are unsigned for now, so both will warn on
+first launch.
+
 ### Added
 
+- **Downloadable builds for every platform.** A tagged release now builds on
+  Linux, macOS and Windows runners and attaches each platform's installers to
+  the release. The release stays a draft until all three finish, so it is never
+  downloadable while a platform is missing. This also gives `electron-updater` a
+  feed: the app checks the same GitHub release it was built from.
 - **Photo previews before posting.** Attaching now stages the images in the main
   process and shows a thumbnail tray in the composer, with per-photo removal, so
   a post is only published when you press Post. Previously the picker closing

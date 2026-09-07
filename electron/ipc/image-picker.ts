@@ -101,6 +101,43 @@ export async function readImagePart(filePath: string): Promise<IpcResult<ImagePa
   });
 }
 
+/**
+ * The longest edge of a composer thumbnail.
+ *
+ * Previews are scaled here rather than sent whole: ten 5 MB originals would be
+ * about 66 MB of base64 crossing IPC to be drawn at 96px. The *upload* still
+ * carries the original bytes — only what the renderer sees is shrunk.
+ */
+export const PREVIEW_MAX_EDGE = 320;
+
+/**
+ * A `data:` URL preview of the given bytes, downscaled. Falls back to the
+ * original bytes when the image cannot be decoded, so a valid-but-exotic file
+ * still shows something rather than an empty box (A10).
+ */
+export function toPreviewDataUrl(bytes: Buffer, contentType: string): string {
+  const image = nativeImage.createFromBuffer(bytes);
+  const { width, height } = image.getSize();
+
+  if (width === 0 || height === 0) {
+    return `data:${contentType};base64,${bytes.toString('base64')}`;
+  }
+
+  const longestEdge = Math.max(width, height);
+  if (longestEdge <= PREVIEW_MAX_EDGE) {
+    return `data:${contentType};base64,${bytes.toString('base64')}`;
+  }
+
+  const scale = PREVIEW_MAX_EDGE / longestEdge;
+  const resized = image.resize({
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    quality: 'good',
+  });
+
+  return `data:image/png;base64,${resized.toPNG().toString('base64')}`;
+}
+
 /** The square edge, in pixels, every stored avatar is normalised to. */
 export const AVATAR_SIZE = 512;
 

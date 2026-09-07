@@ -3,13 +3,15 @@
  * presentational.
  */
 import type { Post } from '@shared/ipc-types';
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useDebouncedValue } from '@/hooks/use-debounced-value';
 import { SEARCH_DEBOUNCE_MS } from '@/lib/constants';
 import { displayName } from '@/lib/user-display';
 
-import { useFeedStore } from './store';
+import { fetchPost } from './api';
+import { usePostActions, type PostActions, type PostSink } from './post-actions';
+import { feedPostSink, useFeedStore } from './store';
 
 export function useFeed() {
   const status = useFeedStore((state) => state.status);
@@ -53,10 +55,113 @@ export function usePostComposer() {
   return { publish, isPublishing };
 }
 
-export function useToggleReaction() {
-  return useFeedStore((state) => state.toggleReaction);
+/** The feed's own post actions: react, edit, delete, repost, copy link. */
+export function useFeedPostActions(): PostActions {
+  return usePostActions(feedPostSink);
+}
+
+/** Keeps a post's comment count in step with the thread rendered under it. */
+export function useFeedCommentCount(): (postId: string, delta: number) => void {
+  return useFeedStore((state) => state.adjustCommentCount);
 }
 
 export function useLoadedPosts(): Post[] {
   return useFeedStore((state) => state.posts);
+}
+
+export type SinglePostStatus = 'loading' | 'ready' | 'error';
+
+interface SinglePostState {
+  post: Post | null;
+  status: SinglePostStatus;
+  error: string | null;
+  sink: PostSink;
+  adjustCommentCount: (postId: string, delta: number) => void;
+}
+
+/**
+ * One post on its own, for a permalink or a notification's target.
+ *
+ * Held locally rather than read out of the feed: the post may never have been
+ * in the feed at all — someone else's, reached from a notification — and the
+ * server still enforces whether the caller may see it (403 POST_NOT_VISIBLE).
+ */
+export function useSinglePost(postId: string | undefined): SinglePostState {
+  // Keyed by the id it was fetched for, so switching posts reads as "loading"
+  // rather than briefly showing the previous one — and so nothing has to be
+  // reset from inside the effect.
+  // `post: null` on a loaded entry means it was deleted from this very page,
+  // which is a different answer from "not fetched yet".
+  const [loaded, setLoaded] = useState<{ id: string; post: Post | null } | null>(null);
+  const [failure, setFailure] = useState<{ id: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (postId === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void fetchPost(postId).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      if (result.ok) {
+        setLoaded({ id: postId, post: result.data });
+      } else {
+        setFailure({ id: postId, message: result.error.message });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [postId]);
+
+  const sink = useMemo<PostSink>(
+    () => ({
+      replace: (updated) => {
+        setLoaded((current) =>
+          current?.post?.id === updated.id ? { ...current, post: updated } : current,
+        );
+      },
+      remove: () => {
+        setLoaded((current) => (current === null ? null : { ...current, post: null }));
+      },
+    }),
+    [],
+  );
+
+  const adjustCommentCount = useCallback((_postId: string, delta: number) => {
+    setLoaded((current) =>
+      current?.post == null
+        ? current
+        : {
+            ...current,
+            post: {
+              ...current.post,
+              commentCount: Math.max(0, current.post.commentCount + delta),
+            },
+          },
+    );
+  }, []);
+
+  // Status is derived from which id the state belongs to, so a route change
+  // reads as loading without an effect having to reset anything.
+  if (postId === undefined) {
+    return {
+      post: null,
+      status: 'error',
+      error: 'No post was requested.',
+      sink,
+      adjustCommentCount,
+    };
+  }
+  if (failure?.id === postId) {
+    return { post: null, status: 'error', error: failure.message, sink, adjustCommentCount };
+  }
+  if (loaded?.id === postId) {
+    return { post: loaded.post, status: 'ready', error: null, sink, adjustCommentCount };
+  }
+  return { post: null, status: 'loading', error: null, sink, adjustCommentCount };
 }

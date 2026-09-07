@@ -1,4 +1,5 @@
 import { CalendarDays, Pencil } from 'lucide-react';
+import type { ReactNode } from 'react';
 import type { User } from '@shared/ipc-types';
 
 import { Avatar } from '@/components/ui/Avatar';
@@ -9,14 +10,17 @@ import { displayName, handleOf, initialsOf } from '@/lib/user-display';
 interface ProfileHeaderProps {
   user: User;
   postCount: number;
-  onEdit: () => void;
+  /** Present on the caller's own profile; absent on someone else's. */
+  onEdit?: () => void;
+  /** What sits where "Edit profile" would — the friendship controls, elsewhere. */
+  action?: ReactNode;
 }
 
 /**
  * The banner-and-identity block: a brand-tinted strip, the avatar overlapping
  * it, then name, handle, bio and the joined date.
  */
-export function ProfileHeader({ user, postCount, onEdit }: ProfileHeaderProps) {
+export function ProfileHeader({ user, postCount, onEdit, action }: ProfileHeaderProps) {
   return (
     <header className="border-outline-variant bg-surface-container-lowest overflow-hidden rounded-2xl border">
       <div
@@ -35,9 +39,13 @@ export function ProfileHeader({ user, postCount, onEdit }: ProfileHeaderProps) {
             />
           </div>
 
-          <Button leadingIcon={<Pencil className="size-4" />} onClick={onEdit}>
-            Edit profile
-          </Button>
+          {onEdit === undefined ? (
+            action
+          ) : (
+            <Button leadingIcon={<Pencil className="size-4" />} onClick={onEdit}>
+              Edit profile
+            </Button>
+          )}
         </div>
 
         <div className="mt-md gap-xs flex flex-col">

@@ -12,7 +12,6 @@ import {
   avatarPickResponseSchema,
   commentPageSchema,
   commentResponseSchema,
-  createPostResponseSchema,
   deletedResponseSchema,
   exportPostsResponseSchema,
   feedResponseSchema,
@@ -27,7 +26,9 @@ import {
   reactionSummarySchema,
   registerResponseSchema,
   sessionResponseSchema,
+  shareLinkCopiedResponseSchema,
   shareLinkResponseSchema,
+  stageImagesResponseSchema,
   unreadCountSchema,
   userPostsResponseSchema,
   windowStateSchema,
@@ -36,6 +37,7 @@ import {
   type CreateCommentRequest,
   type CreatePostRequest,
   type DeleteCommentRequest,
+  type DiscardImagesRequest,
   type ExportPostsRequest,
   type FeedRequest,
   type ForgotPasswordRequest,
@@ -124,7 +126,13 @@ export const ipc = {
   listFeed: (request: FeedRequest) =>
     guarded('feed.list', feedResponseSchema, (api) => api.feed.list(request)),
   createPost: (request: CreatePostRequest) =>
-    guarded('feed.createPost', createPostResponseSchema, (api) => api.feed.createPost(request)),
+    guarded('feed.createPost', postResponseSchema, (api) => api.feed.createPost(request)),
+  stageImages: () =>
+    guarded('feed.stageImages', stageImagesResponseSchema, (api) => api.feed.stageImages()),
+  discardImages: (request: DiscardImagesRequest) =>
+    guarded('feed.discardImages', acknowledgedResponseSchema, (api) =>
+      api.feed.discardImages(request),
+    ),
 
   getPost: (request: PostIdRequest) =>
     guarded('posts.get', postResponseSchema, (api) => api.posts.get(request)),
@@ -136,6 +144,10 @@ export const ipc = {
     guarded('posts.repost', postResponseSchema, (api) => api.posts.repost(request)),
   postShareLink: (request: PostIdRequest) =>
     guarded('posts.shareLink', shareLinkResponseSchema, (api) => api.posts.shareLink(request)),
+  copyPostShareLink: (request: PostIdRequest) =>
+    guarded('posts.copyShareLink', shareLinkCopiedResponseSchema, (api) =>
+      api.posts.copyShareLink(request),
+    ),
 
   createComment: (request: CreateCommentRequest) =>
     guarded('comments.create', commentResponseSchema, (api) => api.comments.create(request)),

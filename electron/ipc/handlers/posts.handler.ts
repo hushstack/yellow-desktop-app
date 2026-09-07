@@ -10,6 +10,7 @@
  * Post ids arrive validated by `registerIpcHandler` and are percent-encoded by
  * `ENDPOINTS`, so a crafted id cannot address a different route (A05).
  */
+import { clipboard } from 'electron';
 import { z } from 'zod';
 
 import { createLogger } from '../../../shared/logger';
@@ -25,11 +26,13 @@ import {
   postResponseSchema,
   postSchema,
   repostRequestSchema,
+  shareLinkCopiedResponseSchema,
   shareLinkResponseSchema,
   updatePostRequestSchema,
   type DeletedResponse,
   type IpcResult,
   type PostResponse,
+  type ShareLinkCopiedResponse,
   type ShareLinkResponse,
 } from '../../../shared/ipc-types';
 
@@ -118,6 +121,9 @@ export function registerPostHandlers(): void {
     },
   );
 
+  // Reading the link is what the share dialog shows; it also answers
+  // POST_NOT_VISIBLE for a non-public post, which is the check that decides
+  // whether sharing is offered at all.
   registerIpcHandler(
     IPC_CHANNELS.POSTS_SHARE_LINK,
     postIdRequestSchema,
@@ -127,5 +133,41 @@ export function registerPostHandlers(): void {
         url: ENDPOINTS.posts.shareLink(postId),
         schema: shareLinkResponseSchema,
       }),
+  );
+
+  /**
+   * Copying is its own channel because the clipboard write has to happen here:
+   * the page holds no clipboard permission under the default-deny policy. It
+   * re-reads the link rather than accepting one from the renderer, so what
+   * lands on the clipboard is always a URL the server just produced for this
+   * post id — the renderer never says what gets written (OWASP A01).
+   */
+  registerIpcHandler(
+    IPC_CHANNELS.POSTS_COPY_SHARE_LINK,
+    postIdRequestSchema,
+    async ({ postId }): Promise<IpcResult<ShareLinkCopiedResponse>> => {
+      const result = await apiRequest({
+        method: 'get',
+        url: ENDPOINTS.posts.shareLink(postId),
+        schema: shareLinkResponseSchema,
+      });
+
+      if (!result.ok) {
+        return result;
+      }
+
+      // A clipboard the OS refuses is not worth failing the whole call over:
+      // the URL still comes back, and the UI can show it (A10).
+      let copied = true;
+      try {
+        await clipboard.writeText(result.data.url);
+      } catch (error) {
+        copied = false;
+        log.warn('share_link_copy_failed', { error });
+      }
+
+      log.info('share_link_copied', { copied });
+      return ipcOk(shareLinkCopiedResponseSchema.parse({ url: result.data.url, copied }));
+    },
   );
 }

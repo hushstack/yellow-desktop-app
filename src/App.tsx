@@ -7,15 +7,20 @@ import { GuestRoute } from '@/components/layout/GuestRoute';
 import { ProtectedRoute } from '@/components/layout/ProtectedRoute';
 import { Spinner } from '@/components/ui/Spinner';
 import { useSessionLifecycle } from '@/features/auth/hooks';
+import { ForgotPasswordPage } from '@/routes/auth/ForgotPasswordPage';
 import { LoginPage } from '@/routes/auth/LoginPage';
 import { RegisterPage } from '@/routes/auth/RegisterPage';
+import { ResetPasswordPage } from '@/routes/auth/ResetPasswordPage';
 import { VerifyOtpPage } from '@/routes/auth/VerifyOtpPage';
 
 // Split at the route level: none of these are needed to render the auth flow.
 const FeedPage = lazy(() => import('@/routes/feed/FeedPage'));
+const PostPage = lazy(() => import('@/routes/feed/PostPage'));
+const FriendsPage = lazy(() => import('@/routes/friends/FriendsPage'));
 const MessagesPage = lazy(() => import('@/routes/messages/MessagesPage'));
 const NotificationsPage = lazy(() => import('@/routes/notifications/NotificationsPage'));
 const ProfilePage = lazy(() => import('@/routes/profile/ProfilePage'));
+const UserProfilePage = lazy(() => import('@/routes/profile/UserProfilePage'));
 const SettingsPage = lazy(() => import('@/routes/settings/SettingsPage'));
 
 function RouteFallback() {
@@ -43,6 +48,8 @@ export function App() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/verify" element={<VerifyOtpPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
             </Route>
           </Route>
 
@@ -50,9 +57,12 @@ export function App() {
             <Route element={<ProtectedRoute />}>
               <Route element={<AppShell />}>
                 <Route path="/feed" element={<FeedPage />} />
+                <Route path="/posts/:postId" element={<PostPage />} />
                 <Route path="/messages" element={<MessagesPage />} />
                 <Route path="/notifications" element={<NotificationsPage />} />
+                <Route path="/friends" element={<FriendsPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
+                <Route path="/users/:userId" element={<UserProfilePage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
             </Route>

@@ -4,17 +4,18 @@
  * Holds the loaded pages, the cursor for the next one, and the in-flight flags
  * the composer and the reaction buttons read.
  *
- * Reactions are applied optimistically and reconciled with the summary the API
- * returns, so the count is authoritative rather than guessed; a failure rolls
- * the post back to what the server last told us.
+ * The post *mutations* are not here — they live in post-actions.ts, because a
+ * profile timeline runs the same operations against a list this store does not
+ * own. What the store contributes is the sink those mutations write into.
  */
 import type { Post } from '@shared/ipc-types';
 import { create } from 'zustand';
 
 import { createLogger } from '@/lib/logger';
 
-import { addReaction, fetchFeed, publishPost, removeReaction } from './api';
-import { PRIMARY_REACTION, type ComposePostInput } from './types';
+import { fetchFeed, publishPost } from './api';
+import type { PostSink } from './post-actions';
+import type { ComposePostInput } from './types';
 
 const log = createLogger('feed.store');
 
@@ -30,8 +31,14 @@ interface FeedState {
   isPublishing: boolean;
   load: () => Promise<void>;
   loadMore: () => Promise<void>;
-  publish: (input: ComposePostInput, withImages?: boolean) => Promise<boolean>;
-  toggleReaction: (postId: string) => Promise<void>;
+  publish: (input: ComposePostInput, imageTokens?: readonly string[]) => Promise<boolean>;
+  /** Adopts a post the server has just returned, wherever it came from. */
+  replacePost: (post: Post) => void;
+  removePost: (postId: string) => void;
+  prependPost: (post: Post) => void;
+  /** Adjusts a post's comment count after the thread beneath it changed. */
+  adjustCommentCount: (postId: string, delta: number) => void;
+  clearError: () => void;
 }
 
 function replacePost(posts: Post[], updated: Post): Post[] {
@@ -86,18 +93,13 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     });
   },
 
-  publish: async (input, withImages = false) => {
+  publish: async (input, imageTokens = []) => {
     set({ isPublishing: true });
-    const result = await publishPost(input, withImages);
+    const result = await publishPost(input, imageTokens);
     set({ isPublishing: false });
 
     if (!result.ok) {
       set({ error: result.error.message });
-      return false;
-    }
-
-    if (result.data === null) {
-      // The image picker was cancelled: nothing was posted, nothing to report.
       return false;
     }
 
@@ -106,36 +108,45 @@ export const useFeedStore = create<FeedState>((set, get) => ({
     return true;
   },
 
-  toggleReaction: async (postId) => {
-    const existing = get().posts.find((post) => post.id === postId);
-    if (existing === undefined) {
-      return;
-    }
+  replacePost: (post) => {
+    set({ posts: replacePost(get().posts, post) });
+  },
 
-    const hadReacted = existing.viewerReaction !== null && existing.viewerReaction !== undefined;
+  removePost: (postId) => {
+    set({ posts: get().posts.filter((post) => post.id !== postId) });
+  },
 
-    // Optimistic: repaint now, reconcile with the server's summary below.
+  prependPost: (post) => {
+    set({ posts: [post, ...get().posts] });
+  },
+
+  adjustCommentCount: (postId, delta) => {
     set({
-      posts: replacePost(get().posts, {
-        ...existing,
-        viewerReaction: hadReacted ? null : PRIMARY_REACTION,
-      }),
-    });
-
-    const result = hadReacted ? await removeReaction(postId) : await addReaction(postId);
-
-    if (!result.ok) {
-      // Roll back to the last state the server confirmed.
-      set({ posts: replacePost(get().posts, existing), error: result.error.message });
-      return;
-    }
-
-    set({
-      posts: replacePost(get().posts, {
-        ...existing,
-        reactionCounts: { ...result.data.counts, total: result.data.total },
-        viewerReaction: result.data.viewerReaction ?? null,
-      }),
+      posts: get().posts.map((post) =>
+        post.id === postId
+          ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
+          : post,
+      ),
     });
   },
+
+  clearError: () => {
+    set({ error: null });
+  },
 }));
+
+/**
+ * The feed's sink, as a module-level constant so `usePostActions` does not see
+ * a new object on every render.
+ */
+export const feedPostSink: PostSink = {
+  replace: (post) => {
+    useFeedStore.getState().replacePost(post);
+  },
+  remove: (postId) => {
+    useFeedStore.getState().removePost(postId);
+  },
+  prepend: (post) => {
+    useFeedStore.getState().prependPost(post);
+  },
+};

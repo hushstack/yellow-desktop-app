@@ -1,6 +1,7 @@
 import { Inbox } from 'lucide-react';
 
 import { EmptyState } from '@/components/ui/EmptyState';
+import type { PostActions } from '@/features/feed/post-actions';
 import type { Post } from '@/features/feed/types';
 import { FEED_ROW_HEIGHT_PX, VIRTUALIZATION_THRESHOLD } from '@/lib/constants';
 
@@ -9,7 +10,9 @@ import { PostCard } from './PostCard';
 interface PostListProps {
   posts: Post[];
   isFiltered: boolean;
-  onToggleReaction: (postId: string) => void;
+  actions: PostActions;
+  viewerId: string | undefined;
+  onCommentCountChange: (postId: string, delta: number) => void;
 }
 
 /**
@@ -20,7 +23,13 @@ interface PostListProps {
  * VIRTUALIZATION_THRESHOLD rows this shape hands over to a windowing renderer
  * without the components changing — see README.
  */
-export function PostList({ posts, isFiltered, onToggleReaction }: PostListProps) {
+export function PostList({
+  posts,
+  isFiltered,
+  actions,
+  viewerId,
+  onCommentCountChange,
+}: PostListProps) {
   if (posts.length === 0) {
     return isFiltered ? (
       <EmptyState
@@ -45,7 +54,12 @@ export function PostList({ posts, isFiltered, onToggleReaction }: PostListProps)
     >
       {posts.map((post) => (
         <li key={post.id}>
-          <PostCard post={post} onToggleReaction={onToggleReaction} />
+          <PostCard
+            post={post}
+            actions={actions}
+            viewerId={viewerId}
+            onCommentCountChange={onCommentCountChange}
+          />
         </li>
       ))}
     </ul>

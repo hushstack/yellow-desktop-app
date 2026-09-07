@@ -1,10 +1,15 @@
 import { Bell, Check } from 'lucide-react';
 import { memo } from 'react';
+import { Link } from 'react-router-dom';
 
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { IconButton } from '@/components/ui/IconButton';
-import { describeNotification, type Notification } from '@/features/notifications/types';
+import {
+  describeNotification,
+  linkTargetOf,
+  type Notification,
+} from '@/features/notifications/types';
 import { cn } from '@/lib/cn';
 import { relativeTime } from '@/lib/relative-time';
 import { displayName, initialsOf } from '@/lib/user-display';
@@ -23,7 +28,9 @@ export const NotificationRow = memo(function NotificationRow({
 }: NotificationRowProps) {
   const { actor } = notification;
   const message = describeNotification(notification);
-  const name = actor !== null && actor !== undefined ? displayName(actor) : null;
+  const hasActor = actor !== null && actor !== undefined;
+  const name = hasActor ? displayName(actor) : null;
+  const target = linkTargetOf(notification);
 
   return (
     <Card
@@ -34,8 +41,14 @@ export const NotificationRow = memo(function NotificationRow({
         !notification.read && 'bg-surface-container-lowest',
       )}
     >
-      {actor !== null && actor !== undefined ? (
-        <Avatar initials={initialsOf(actor)} name={displayName(actor)} imageUrl={actor.avatarUrl} />
+      {hasActor ? (
+        <Link to={`/users/${actor.id}`} className="shrink-0">
+          <Avatar
+            initials={initialsOf(actor)}
+            name={displayName(actor)}
+            imageUrl={actor.avatarUrl}
+          />
+        </Link>
       ) : (
         <span
           aria-hidden
@@ -47,8 +60,27 @@ export const NotificationRow = memo(function NotificationRow({
 
       <div className="min-w-0 flex-1">
         <p className="font-body-sm text-body-sm text-on-surface">
-          {name !== null && <span className="font-heading text-on-surface">{name} </span>}
-          <span className={name !== null ? undefined : 'first-letter:uppercase'}>{message}</span>
+          {name !== null && hasActor && (
+            <Link
+              to={`/users/${actor.id}`}
+              className="font-heading text-on-surface hover:text-primary transition-colors"
+            >
+              {name}{' '}
+            </Link>
+          )}
+          {target === null ? (
+            <span className={name !== null ? undefined : 'first-letter:uppercase'}>{message}</span>
+          ) : (
+            <Link
+              to={target}
+              className={cn(
+                'hover:text-primary transition-colors',
+                name === null && 'first-letter:uppercase',
+              )}
+            >
+              {message}
+            </Link>
+          )}
         </p>
         <p className="font-small text-small text-on-surface-variant">
           {relativeTime(notification.createdAt)}

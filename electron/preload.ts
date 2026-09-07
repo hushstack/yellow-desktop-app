@@ -25,7 +25,7 @@ import type {
   CommentResponse,
   CreateCommentRequest,
   CreatePostRequest,
-  CreatePostResponse,
+  DiscardImagesRequest,
   DeleteCommentRequest,
   DeletedResponse,
   ExportPostsRequest,
@@ -57,7 +57,9 @@ import type {
   ResetPasswordRequest,
   SessionResponse,
   SetReactionRequest,
+  ShareLinkCopiedResponse,
   ShareLinkResponse,
+  StageImagesResponse,
   UnreadCount,
   UpdatePostRequest,
   UpdateProfileRequest,
@@ -91,7 +93,10 @@ const bridge: YelloBridge = {
   feed: {
     list: (request: FeedRequest) => invoke<FeedResponse>(IPC_CHANNELS.FEED_LIST, request),
     createPost: (request: CreatePostRequest) =>
-      invoke<CreatePostResponse>(IPC_CHANNELS.FEED_CREATE_POST, request),
+      invoke<PostResponse>(IPC_CHANNELS.FEED_CREATE_POST, request),
+    stageImages: () => invoke<StageImagesResponse>(IPC_CHANNELS.FEED_STAGE_IMAGES),
+    discardImages: (request: DiscardImagesRequest) =>
+      invoke<AcknowledgedResponse>(IPC_CHANNELS.FEED_DISCARD_IMAGES, request),
   },
   posts: {
     get: (request: PostIdRequest) => invoke<PostResponse>(IPC_CHANNELS.POSTS_GET, request),
@@ -101,6 +106,8 @@ const bridge: YelloBridge = {
     repost: (request: RepostRequest) => invoke<PostResponse>(IPC_CHANNELS.POSTS_REPOST, request),
     shareLink: (request: PostIdRequest) =>
       invoke<ShareLinkResponse>(IPC_CHANNELS.POSTS_SHARE_LINK, request),
+    copyShareLink: (request: PostIdRequest) =>
+      invoke<ShareLinkCopiedResponse>(IPC_CHANNELS.POSTS_COPY_SHARE_LINK, request),
   },
   comments: {
     create: (request: CreateCommentRequest) =>

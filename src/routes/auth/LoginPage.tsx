@@ -75,12 +75,12 @@ export function LoginPage() {
                   form.setField('rememberMe', event.target.checked);
                 }}
               />
-              <span
-                className="font-label text-label text-on-surface-variant/60"
-                title="Password recovery is not wired up in this build"
+              <Link
+                to="/forgot-password"
+                className="font-label text-label text-primary hover:text-primary-fixed-dim transition-colors"
               >
                 Forgot password?
-              </span>
+              </Link>
             </div>
 
             {error !== null && <ApiErrorNotice error={error} />}

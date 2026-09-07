@@ -4,7 +4,13 @@ import { useOutletContext } from 'react-router-dom';
 import type { AppShellContext } from '@/components/layout/AppShell';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
-import { useFeed, useToggleReaction, useVisiblePosts } from '@/features/feed/hooks';
+import { useCurrentUser } from '@/features/auth/hooks';
+import {
+  useFeed,
+  useFeedCommentCount,
+  useFeedPostActions,
+  useVisiblePosts,
+} from '@/features/feed/hooks';
 
 import { PostComposer } from './components/PostComposer';
 import { PostList } from './components/PostList';
@@ -14,7 +20,9 @@ export default function FeedPage() {
   const { searchQuery } = useOutletContext<AppShellContext>();
   const { status, error, loadMore, hasMore, isLoadingMore } = useFeed();
   const posts = useVisiblePosts(searchQuery);
-  const toggleReaction = useToggleReaction();
+  const actions = useFeedPostActions();
+  const adjustCommentCount = useFeedCommentCount();
+  const viewer = useCurrentUser();
 
   return (
     <div className="max-w-content-max gap-lg px-lg py-lg mx-auto flex w-full flex-col">
@@ -41,9 +49,9 @@ export default function FeedPage() {
           <PostList
             posts={posts}
             isFiltered={searchQuery.trim() !== ''}
-            onToggleReaction={(postId) => {
-              void toggleReaction(postId);
-            }}
+            actions={actions}
+            viewerId={viewer?.id}
+            onCommentCountChange={adjustCommentCount}
           />
 
           {hasMore && searchQuery.trim() === '' && (

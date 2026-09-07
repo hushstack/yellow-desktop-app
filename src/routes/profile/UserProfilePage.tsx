@@ -1,23 +1,32 @@
 import { PenLine, TriangleAlert } from 'lucide-react';
-import { useState } from 'react';
+import { Navigate, useParams } from 'react-router-dom';
 
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { useCurrentUser } from '@/features/auth/hooks';
 import { usePostActions } from '@/features/feed/post-actions';
-import { useProfileMutations, useProfilePosts } from '@/features/profile/hooks';
+import { useRelationship } from '@/features/friends/hooks';
+import { useProfilePosts, usePublicProfile } from '@/features/profile/hooks';
 import { PostCard } from '@/routes/feed/components/PostCard';
+import { displayName } from '@/lib/user-display';
 
-import { EditProfileForm } from './components/EditProfileForm';
-import { ProfileErrorNotice } from './components/ProfileErrorNotice';
+import { FriendshipControls } from './components/FriendshipControls';
 import { ProfileHeader } from './components/ProfileHeader';
 
-/** The signed-in user's own profile: identity, editing, and their timeline. */
-export default function ProfilePage() {
-  const user = useCurrentUser();
-  const [isEditing, setIsEditing] = useState(false);
-  const mutations = useProfileMutations(user);
+/**
+ * Somebody else's profile: `GET /users/{id}` for the identity, and
+ * `GET /users/{id}/posts` for the timeline.
+ *
+ * Visibility is applied inside the server's query, so the page count matches
+ * what arrives — a non-friend simply sees fewer posts, and nothing here has to
+ * filter (OWASP A01: the client is not the place that decision is made).
+ */
+export default function UserProfilePage() {
+  const { userId } = useParams<{ userId: string }>();
+  const viewer = useCurrentUser();
+  const { user, status: profileStatus, error: profileError } = usePublicProfile(userId);
+  const relationship = useRelationship(userId);
   const {
     posts,
     status,
@@ -28,13 +37,32 @@ export default function ProfilePage() {
     loadMore,
     sink,
     adjustCommentCount,
-  } = useProfilePosts(user?.id, { isOwnProfile: true });
+  } = useProfilePosts(userId);
   const actions = usePostActions(sink);
 
-  if (user === null) {
+  // Your own id in the URL is the same page as /profile, which can edit.
+  if (userId !== undefined && viewer !== null && viewer.id === userId) {
+    return <Navigate to="/profile" replace />;
+  }
+
+  if (profileStatus === 'loading') {
     return (
       <div className="flex h-full items-center justify-center">
-        <Spinner label="Loading your profile…" />
+        <Spinner label="Loading profile…" />
+      </div>
+    );
+  }
+
+  if (profileStatus === 'error' || user === null) {
+    return (
+      <div className="max-w-content-max px-lg py-lg mx-auto w-full">
+        <p
+          role="alert"
+          className="text-on-error-container bg-error-container/40 font-body-sm text-body-sm gap-sm px-md py-sm flex items-center rounded-lg"
+        >
+          <TriangleAlert aria-hidden className="size-4 shrink-0" />
+          {profileError ?? 'That profile could not be loaded.'}
+        </p>
       </div>
     );
   }
@@ -44,29 +72,15 @@ export default function ProfilePage() {
       <ProfileHeader
         user={user}
         postCount={totalPosts}
-        onEdit={() => {
-          setIsEditing(true);
-        }}
+        action={<FriendshipControls control={relationship} />}
       />
-
-      {!isEditing && mutations.error !== null && <ProfileErrorNotice error={mutations.error} />}
-
-      {isEditing && (
-        <EditProfileForm
-          user={user}
-          mutations={mutations}
-          onDone={() => {
-            setIsEditing(false);
-          }}
-        />
-      )}
 
       <section className="gap-md flex flex-col">
         <h2 className="font-heading text-h3 text-on-surface">Posts</h2>
 
         {status === 'loading' && (
           <div className="py-xl flex justify-center">
-            <Spinner label="Loading your posts…" />
+            <Spinner label="Loading posts…" />
           </div>
         )}
 
@@ -76,15 +90,19 @@ export default function ProfilePage() {
             className="text-on-error-container bg-error-container/40 font-body-sm text-body-sm gap-sm px-md py-sm flex items-center rounded-lg"
           >
             <TriangleAlert aria-hidden className="size-4 shrink-0" />
-            {error ?? 'Your posts could not be loaded.'}
+            {error ?? 'These posts could not be loaded.'}
           </p>
         )}
 
         {status === 'ready' && posts.length === 0 && (
           <EmptyState
             icon={<PenLine className="size-6" />}
-            title="You haven't posted yet"
-            description="Anything you write on the home feed shows up here."
+            title={`Nothing to show from ${displayName(user)}`}
+            description={
+              relationship.relationship === 'friends'
+                ? 'They have not posted anything yet.'
+                : 'They may have posts that only their friends can see.'
+            }
           />
         )}
 
@@ -95,7 +113,7 @@ export default function ProfilePage() {
                 <PostCard
                   post={post}
                   actions={actions}
-                  viewerId={user.id}
+                  viewerId={viewer?.id}
                   onCommentCountChange={adjustCommentCount}
                 />
               </li>

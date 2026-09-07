@@ -375,28 +375,51 @@ export const feedResponseSchema = z.object({
 export const POST_MAX_IMAGES = 10;
 
 /**
- * `withImages` asks the main process to open the OS file picker: the renderer
- * never names a path, so it cannot make the app read a file of its choosing
- * (A01). Content may be empty only when images are being attached.
+ * Attaching an image is two steps, the same shape the avatar upload uses: the
+ * main process opens the OS picker, validates and holds the bytes, and hands
+ * back an opaque token plus a thumbnail to show. The renderer never names a
+ * path, so it cannot make the app read a file of its choosing (A01), and never
+ * holds the bytes it is about to upload.
+ *
+ * Two steps rather than one because the user has to see what they picked before
+ * it is published — a picker that posts the moment it closes gives them no
+ * chance to change their mind.
  */
+export const stagedImageSchema = z.object({
+  /** Opaque handle to the staged file; the renderer passes it back to publish. */
+  token: z.string().min(1).max(64),
+  fileName: z.string().max(255),
+  /** A downscaled `data:` URL for the composer thumbnail, never the full file. */
+  previewDataUrl: z.string().max(2_000_000),
+  byteSize: z.number().int().nonnegative(),
+});
+
+export const stageImagesResponseSchema = z.object({
+  images: z.array(stagedImageSchema).max(POST_MAX_IMAGES),
+  /** True when the picker was dismissed without choosing anything. */
+  cancelled: z.boolean(),
+  /** Files chosen but not staged, because the per-post limit was already met. */
+  skipped: z.number().int().nonnegative(),
+});
+
+/** Frees staged bytes the user removed from the composer, or abandoned. */
+export const discardImagesRequestSchema = z.object({
+  tokens: z.array(z.string().min(1).max(64)).max(POST_MAX_IMAGES),
+});
+
+/** Content may be empty only when images are attached — the API's own rule. */
 export const createPostRequestSchema = z
   .object({
     content: z.string().trim().max(5000),
     visibility: postVisibilitySchema,
-    withImages: z.boolean().optional(),
+    imageTokens: z.array(z.string().min(1).max(64)).max(POST_MAX_IMAGES),
   })
-  .refine((value) => value.content.length > 0 || value.withImages === true, {
+  .refine((value) => value.content.length > 0 || value.imageTokens.length > 0, {
     message: 'A post needs text or at least one image.',
     path: ['content'],
   });
 
 export const postResponseSchema = z.object({ post: postSchema });
-
-/** Set when the picker was opened and the user cancelled: nothing was posted. */
-export const createPostResponseSchema = z.object({
-  post: postSchema.nullable(),
-  cancelled: z.boolean(),
-});
 
 export const postIdRequestSchema = z.object({
   postId: z.string().min(1).max(64),
@@ -414,6 +437,18 @@ export const repostRequestSchema = z.object({
 });
 
 export const shareLinkResponseSchema = z.object({ url: z.string().max(2048) });
+
+/**
+ * Copying is done in the main process, from a URL the *server* returned for a
+ * post id — the renderer never supplies the text that lands on the clipboard,
+ * so a compromised renderer cannot plant arbitrary content there (A01). It also
+ * sidesteps the default-deny permission policy, which refuses clipboard access
+ * to the page.
+ */
+export const shareLinkCopiedResponseSchema = z.object({
+  url: z.string().max(2048),
+  copied: z.boolean(),
+});
 
 /** Deletes answer 204; the renderer gets a flag rather than an empty result. */
 export const deletedResponseSchema = z.object({ deleted: z.boolean() });
@@ -632,8 +667,8 @@ export type PostIdRequest = z.infer<typeof postIdRequestSchema>;
 export type UpdatePostRequest = z.infer<typeof updatePostRequestSchema>;
 export type RepostRequest = z.infer<typeof repostRequestSchema>;
 export type ShareLinkResponse = z.infer<typeof shareLinkResponseSchema>;
+export type ShareLinkCopiedResponse = z.infer<typeof shareLinkCopiedResponseSchema>;
 export type DeletedResponse = z.infer<typeof deletedResponseSchema>;
-export type CreatePostResponse = z.infer<typeof createPostResponseSchema>;
 export type ReactionTargetType = z.infer<typeof reactionTargetTypeSchema>;
 export type ReactionTargetRequest = z.infer<typeof reactionTargetRequestSchema>;
 export type CreateCommentRequest = z.infer<typeof createCommentRequestSchema>;
@@ -658,6 +693,9 @@ export type SessionResponse = z.infer<typeof sessionResponseSchema>;
 export type FeedRequest = z.infer<typeof feedRequestSchema>;
 export type FeedResponse = z.infer<typeof feedResponseSchema>;
 export type CreatePostRequest = z.infer<typeof createPostRequestSchema>;
+export type StagedImage = z.infer<typeof stagedImageSchema>;
+export type StageImagesResponse = z.infer<typeof stageImagesResponseSchema>;
+export type DiscardImagesRequest = z.infer<typeof discardImagesRequestSchema>;
 export type PostResponse = z.infer<typeof postResponseSchema>;
 export type SetReactionRequest = z.infer<typeof setReactionRequestSchema>;
 export type ClearReactionRequest = z.infer<typeof clearReactionRequestSchema>;
@@ -684,7 +722,10 @@ export interface YelloBridge {
   };
   readonly feed: {
     list(request: FeedRequest): Promise<IpcResult<FeedResponse>>;
-    createPost(request: CreatePostRequest): Promise<IpcResult<CreatePostResponse>>;
+    createPost(request: CreatePostRequest): Promise<IpcResult<PostResponse>>;
+    /** Opens the OS picker and stages what was chosen, for preview. */
+    stageImages(): Promise<IpcResult<StageImagesResponse>>;
+    discardImages(request: DiscardImagesRequest): Promise<IpcResult<AcknowledgedResponse>>;
   };
   readonly posts: {
     get(request: PostIdRequest): Promise<IpcResult<PostResponse>>;
@@ -692,6 +733,7 @@ export interface YelloBridge {
     remove(request: PostIdRequest): Promise<IpcResult<DeletedResponse>>;
     repost(request: RepostRequest): Promise<IpcResult<PostResponse>>;
     shareLink(request: PostIdRequest): Promise<IpcResult<ShareLinkResponse>>;
+    copyShareLink(request: PostIdRequest): Promise<IpcResult<ShareLinkCopiedResponse>>;
   };
   readonly comments: {
     create(request: CreateCommentRequest): Promise<IpcResult<CommentResponse>>;

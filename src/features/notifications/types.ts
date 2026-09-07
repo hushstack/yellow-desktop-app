@@ -51,4 +51,27 @@ export function describeNotification(notification: Notification): string {
   }
 }
 
+/**
+ * The in-app destination for a row, derived from `type` and `targetId`.
+ *
+ * Friend notifications carry a *friendship* id, which no screen is addressed
+ * by, so they land on /friends. A comment's target is the comment itself, and
+ * the API gives no way to resolve a comment id back to its post — so those go
+ * to /notifications' own list rather than pretending to deep-link. A repost's
+ * target is a post, which does have a page.
+ */
+export function linkTargetOf(notification: Notification): string | null {
+  const { targetId } = notification;
+
+  switch (notification.type) {
+    case 'FRIEND_REQUEST':
+    case 'FRIEND_ACCEPTED':
+      return '/friends';
+    case 'REPOST':
+      return targetId === undefined ? null : `/posts/${targetId}`;
+    default:
+      return null;
+  }
+}
+
 export type { Notification, NotificationType };

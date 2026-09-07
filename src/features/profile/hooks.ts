@@ -6,12 +6,20 @@
  * one source rather than each holding a stale copy.
  */
 import type { Post, User } from '@shared/ipc-types';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useAuthStore } from '@/features/auth/store';
+import type { PostSink } from '@/features/feed/post-actions';
 import { PROFILE_POSTS_PAGE_SIZE } from '@/lib/constants';
 
-import { commitAvatar, fetchUserPosts, pickAvatar, updateProfile, type ProfileError } from './api';
+import {
+  commitAvatar,
+  fetchUser,
+  fetchUserPosts,
+  pickAvatar,
+  updateProfile,
+  type ProfileError,
+} from './api';
 import type { EditProfileValues } from './types';
 
 export type ProfilePostsStatus = 'loading' | 'ready' | 'error';
@@ -24,10 +32,21 @@ interface ProfilePostsState {
   hasMore: boolean;
   isLoadingMore: boolean;
   loadMore: () => void;
+  /**
+   * Where post mutations land for this timeline. A profile's posts live in
+   * local state rather than the feed store, so the shared actions in
+   * feed/post-actions.ts are pointed here instead — which is what makes the
+   * card's buttons work on a profile at all.
+   */
+  sink: PostSink;
+  adjustCommentCount: (postId: string, delta: number) => void;
 }
 
-/** The signed-in user's own timeline, offset-paginated by the API. */
-export function useProfilePosts(userId: string | undefined): ProfilePostsState {
+/** One user's timeline — the caller's own, or anyone else's — offset-paginated. */
+export function useProfilePosts(
+  userId: string | undefined,
+  options: { isOwnProfile?: boolean } = {},
+): ProfilePostsState {
   const [posts, setPosts] = useState<Post[]>([]);
   const [status, setStatus] = useState<ProfilePostsStatus>('loading');
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +92,107 @@ export function useProfilePosts(userId: string | undefined): ProfilePostsState {
     setPage((current) => current + 1);
   }, []);
 
-  return { posts, status, error, totalPosts, hasMore: !isLast, isLoadingMore, loadMore };
+  const isOwnProfile = options.isOwnProfile ?? false;
+
+  const sink = useMemo<PostSink>(
+    () => ({
+      replace: (updated) => {
+        setPosts((current) => current.map((post) => (post.id === updated.id ? updated : post)));
+      },
+      remove: (postId) => {
+        setPosts((current) => current.filter((post) => post.id !== postId));
+        setTotalPosts((current) => Math.max(0, current - 1));
+      },
+      // A repost is the viewer's own post, so it belongs at the top of their
+      // own timeline and nowhere on someone else's.
+      ...(isOwnProfile
+        ? {
+            prepend: (post: Post) => {
+              setPosts((current) => [post, ...current]);
+              setTotalPosts((current) => current + 1);
+            },
+          }
+        : {}),
+    }),
+    [isOwnProfile],
+  );
+
+  const adjustCommentCount = useCallback((postId: string, delta: number) => {
+    setPosts((current) =>
+      current.map((post) =>
+        post.id === postId
+          ? { ...post, commentCount: Math.max(0, post.commentCount + delta) }
+          : post,
+      ),
+    );
+  }, []);
+
+  return {
+    posts,
+    status,
+    error,
+    totalPosts,
+    hasMore: !isLast,
+    isLoadingMore,
+    loadMore,
+    sink,
+    adjustCommentCount,
+  };
+}
+
+export type PublicProfileStatus = 'loading' | 'ready' | 'error';
+
+interface PublicProfileState {
+  user: User | null;
+  status: PublicProfileStatus;
+  error: string | null;
+}
+
+/**
+ * Another user's public profile. Narrower than `/users/me` — the API omits
+ * `email` and `status` — but the same `User` type covers both, because those
+ * two fields are optional on it.
+ */
+export function usePublicProfile(userId: string | undefined): PublicProfileState {
+  // Keyed by the id it was fetched for: switching profiles reads as loading
+  // rather than briefly showing the previous person, and the effect never has
+  // to reset state synchronously.
+  const [loaded, setLoaded] = useState<{ id: string; user: User } | null>(null);
+  const [failure, setFailure] = useState<{ id: string; message: string } | null>(null);
+
+  useEffect(() => {
+    if (userId === undefined) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void fetchUser(userId).then((result) => {
+      if (cancelled) {
+        return;
+      }
+      if (result.ok) {
+        setLoaded({ id: userId, user: result.data });
+      } else {
+        setFailure({ id: userId, message: result.error.message });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  if (userId === undefined) {
+    return { user: null, status: 'error', error: 'No profile was requested.' };
+  }
+  if (failure?.id === userId) {
+    return { user: null, status: 'error', error: failure.message };
+  }
+  if (loaded?.id === userId) {
+    return { user: loaded.user, status: 'ready', error: null };
+  }
+  return { user: null, status: 'loading', error: null };
 }
 
 /** A photo chosen but not yet uploaded: a token to commit and a preview to show. */

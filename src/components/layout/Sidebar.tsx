@@ -6,6 +6,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useCurrentUser } from '@/features/auth/hooks';
+import { usePendingRequestCount } from '@/features/friends/hooks';
 import { useNotificationsPolling, useUnreadCount } from '@/features/notifications/hooks';
 import { cn } from '@/lib/cn';
 import { displayName, handleOf, initialsOf } from '@/lib/user-display';
@@ -25,7 +26,7 @@ const NAV_ITEMS: readonly NavItem[] = [
   { to: '/messages', label: 'Messages', icon: <MessagesSquare className={ICON_CLASS} /> },
   { to: '/profile', label: 'Profile', icon: <CircleUser className={ICON_CLASS} /> },
   { to: '/settings', label: 'Settings', icon: <Settings className={ICON_CLASS} /> },
-  { to: '/friends', label: 'Friends', icon: <Users className={ICON_CLASS} />, disabled: true },
+  { to: '/friends', label: 'Friends', icon: <Users className={ICON_CLASS} /> },
   {
     to: '/notifications',
     label: 'Notifications',
@@ -50,6 +51,7 @@ function itemClasses(isActive: boolean): string {
 export function Sidebar() {
   const user = useCurrentUser();
   const unreadCount = useUnreadCount();
+  const pendingRequests = usePendingRequestCount();
   useNotificationsPolling();
 
   return (
@@ -87,15 +89,21 @@ export function Sidebar() {
             </span>
           ) : (
             (() => {
-              const showBadge = item.to === '/notifications' && unreadCount > 0;
-              const badgeLabel = unreadCount > 99 ? '99+' : String(unreadCount);
+              // Two badges, one rule: notifications count unread, friends count
+              // requests still waiting on an answer.
+              const count =
+                item.to === '/notifications'
+                  ? unreadCount
+                  : item.to === '/friends'
+                    ? pendingRequests
+                    : 0;
+              const showBadge = count > 0;
+              const badgeLabel = count > 99 ? '99+' : String(count);
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  aria-label={
-                    showBadge ? `${item.label}, ${String(unreadCount)} unread` : undefined
-                  }
+                  aria-label={showBadge ? `${item.label}, ${String(count)} waiting` : undefined}
                   className={({ isActive }) => itemClasses(isActive)}
                 >
                   {item.icon}

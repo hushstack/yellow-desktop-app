@@ -7,26 +7,21 @@
  * feed callers keep passing a post id and nothing more.
  */
 import type {
-  Comment,
-  CommentPage,
   FeedResponse,
   IpcError,
   Post,
   PostVisibility,
   ReactionSummary,
   ReactionType,
+  ShareLinkCopiedResponse,
   ShareLinkResponse,
+  StagedImage,
 } from '@shared/ipc-types';
 
 import { ipc } from '@/lib/ipc';
 import { fail, ok, type Result } from '@/lib/result';
 
-import {
-  COMMENT_PAGE_SIZE,
-  FEED_PAGE_SIZE,
-  PRIMARY_REACTION,
-  type ComposePostInput,
-} from './types';
+import { FEED_PAGE_SIZE, PRIMARY_REACTION, type ComposePostInput } from './types';
 
 export type FeedError = IpcError;
 
@@ -38,20 +33,45 @@ export async function fetchFeed(cursor?: string): Promise<Result<FeedResponse, F
   return result.ok ? ok(result.data) : fail(result.error);
 }
 
-/**
- * Resolves to `null` when the user opened the image picker and cancelled —
- * nothing was posted, and that is not an error to show them.
- */
+/** `imageTokens` are handles from `stageImages`, in the order they appear. */
 export async function publishPost(
   input: ComposePostInput,
-  withImages = false,
-): Promise<Result<Post | null, FeedError>> {
+  imageTokens: readonly string[] = [],
+): Promise<Result<Post, FeedError>> {
   const result = await ipc.createPost({
     content: input.content,
     visibility: input.visibility ?? 'PUBLIC',
-    ...(withImages ? { withImages: true } : {}),
+    imageTokens: [...imageTokens],
   });
   return result.ok ? ok(result.data.post) : fail(result.error);
+}
+
+export interface StagedImages {
+  images: StagedImage[];
+  /** Files chosen but turned away because the post is already at the limit. */
+  skipped: number;
+}
+
+/**
+ * Opens the OS picker and stages what was chosen for preview. Resolves to an
+ * empty list when the picker was dismissed, which is not an error.
+ *
+ * The per-post limit is enforced in the main process, which is the side that
+ * knows what is staged — so everything that comes back here is attachable.
+ */
+export async function stagePostImages(): Promise<Result<StagedImages, FeedError>> {
+  const result = await ipc.stageImages();
+  return result.ok
+    ? ok({ images: result.data.images, skipped: result.data.skipped })
+    : fail(result.error);
+}
+
+/** Frees bytes the user removed from the composer, or never posted. */
+export async function discardPostImages(tokens: readonly string[]): Promise<void> {
+  if (tokens.length === 0) {
+    return;
+  }
+  await ipc.discardImages({ tokens: [...tokens] });
 }
 
 export async function fetchPost(postId: string): Promise<Result<Post, FeedError>> {
@@ -77,11 +97,26 @@ export async function repost(postId: string, content?: string): Promise<Result<P
   return result.ok ? ok(result.data.post) : fail(result.error);
 }
 
-/** Only PUBLIC posts can be shared; anything else comes back POST_NOT_VISIBLE. */
+/**
+ * The shareable URL, for the dialog to show. Only PUBLIC posts can be shared;
+ * anything else comes back POST_NOT_VISIBLE.
+ */
 export async function fetchShareLink(
   postId: string,
 ): Promise<Result<ShareLinkResponse, FeedError>> {
   const result = await ipc.postShareLink({ postId });
+  return result.ok ? ok(result.data) : fail(result.error);
+}
+
+/**
+ * Puts the link on the clipboard, which happens in the main process: the
+ * renderer has no clipboard permission of its own — see the default-deny policy
+ * in electron/security/permissions.ts — and never names what gets copied.
+ */
+export async function copyShareLink(
+  postId: string,
+): Promise<Result<ShareLinkCopiedResponse, FeedError>> {
+  const result = await ipc.copyPostShareLink({ postId });
   return result.ok ? ok(result.data) : fail(result.error);
 }
 
@@ -104,49 +139,5 @@ export async function fetchReactionSummary(
   postId: string,
 ): Promise<Result<ReactionSummary, FeedError>> {
   const result = await ipc.reactionSummary({ targetType: 'POST', targetId: postId });
-  return result.ok ? ok(result.data) : fail(result.error);
-}
-
-/* -- comments -- */
-
-export async function fetchComments(
-  postId: string,
-  page = 0,
-  size: number = COMMENT_PAGE_SIZE,
-): Promise<Result<CommentPage, FeedError>> {
-  const result = await ipc.listComments({ postId, page, size });
-  return result.ok ? ok(result.data) : fail(result.error);
-}
-
-export async function addComment(
-  postId: string,
-  content: string,
-  parentCommentId?: string,
-): Promise<Result<Comment, FeedError>> {
-  const result = await ipc.createComment({
-    postId,
-    content,
-    ...(parentCommentId === undefined ? {} : { parentCommentId }),
-  });
-  return result.ok ? ok(result.data.comment) : fail(result.error);
-}
-
-export async function deleteComment(commentId: string): Promise<Result<true, FeedError>> {
-  const result = await ipc.deleteComment({ commentId });
-  return result.ok ? ok(true) : fail(result.error);
-}
-
-export async function reactToComment(
-  commentId: string,
-  type: ReactionType = PRIMARY_REACTION,
-): Promise<Result<ReactionSummary, FeedError>> {
-  const result = await ipc.setReaction({ targetType: 'COMMENT', targetId: commentId, type });
-  return result.ok ? ok(result.data) : fail(result.error);
-}
-
-export async function clearCommentReaction(
-  commentId: string,
-): Promise<Result<ReactionSummary, FeedError>> {
-  const result = await ipc.clearReaction({ targetType: 'COMMENT', targetId: commentId });
   return result.ok ? ok(result.data) : fail(result.error);
 }
